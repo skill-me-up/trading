@@ -21,7 +21,7 @@ from kiteconnect import KiteConnect
 from dhanhq import dhanhq
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
-from mytradingclasses import General, Client
+from tradingclasses import Client
 
 logging.basicConfig(level=logging.INFO)
 
@@ -32,4 +32,9 @@ cwd = os.chdir("C:\\Users\\Yugenderan\\OneDrive\Professional Development\\Progra
 ###############################################################################
 strategy = 'ironcondor'
 client_data = pd.read_csv("files\\clients_list.csv", index_col='client_name')
-client_data = client_data[client_data[strategy] > 0]
+client_data = client_data[client_data[strategy] > 0].fillna('a')
+client_data = client_data.T
+clients = {}
+for name in client_data:
+    clients[name] = Client(client_data[name], 'nap')
+

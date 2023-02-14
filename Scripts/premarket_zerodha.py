@@ -25,7 +25,7 @@ import os
 from pyotp import TOTP
 from datetime import date
 import pandas as pd
-from mytradingclasses import Client, General
+from tradingclasses import Client
 
 """-----------------------------------------------------------------------------"""
 # Changing Current Working Directory
@@ -121,15 +121,13 @@ def pre_market():
     client_data = client_data.T
     clients = {}
     for name in client_data:
-        print(name)
         clients[name] = Client(client_data[name], 'nap') 
-    kite = General.session_zerodha('iampl', clients)
+    kite = Client.session('self','iampl', clients)
     instrument_dump(kite)
 
 
 pre_market()
 
-#kite = generate_trading_session(client_data, user, access_token)
 #premarket_sched = BackgroundScheduler()
 
 #premarket_sched.add_job(pre_market, 'cron', id = 'pre-market_login', day_of_week='mon-fri',
