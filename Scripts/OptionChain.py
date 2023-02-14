@@ -90,7 +90,7 @@ def print_oi(num,step,nearest,url):
     global data
     data = json.loads(response_text)
     currExpiryDate = data["records"]["expiryDates"][0]
-    d2 = data["filtered"]["data"]
+    '''d2 = data["filtered"]["data"]
     CE = []
     PE = []
     for item in d2:
@@ -100,7 +100,7 @@ def print_oi(num,step,nearest,url):
             elif k == 'PE':
                 PE.append(v)
     ce_df = pd.DataFrame(CE)
-    pe_df = pd.DataFrame(PE)
+    pe_df = pd.DataFrame(PE)'''
 
     for item in data['records']['data']:
         #print(item['expiryDate'])

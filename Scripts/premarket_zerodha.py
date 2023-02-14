@@ -7,9 +7,7 @@ Created on Wed Nov 16 10:24:31 2022
 
 """
 Files List:
-    index list.txt
     clients_list.xlsx
-    access_tokens.xlsx
 """
 '''import requests   
 url = "https://images.dhan.co/api-data/api-scrip-master.csv"
@@ -25,19 +23,13 @@ from selenium import webdriver
 import time
 import os
 from pyotp import TOTP
-#import logging
-import datetime as dt
 from datetime import date
 import pandas as pd
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-import openpyxl
+from mytradingclasses import Client, General
 
 """-----------------------------------------------------------------------------"""
 # Changing Current Working Directory
 cwd = os.chdir("C:\\Users\\Yugenderan\\OneDrive\Professional Development\\Programming_Everything\\Trading")
-
-
 """-----------------------------------------------------------------------------"""
 
 def autologin(user, client_data):
@@ -76,79 +68,62 @@ def autologin(user, client_data):
 
 def multi_autologin():
     ##Getting List of Clients to trade today
-    global client_data
-    global access_token
-    global base_account
+    client_data = pd.read_csv("files\\clients_list.csv", index_col='client_name')
+    strategies_list = client_data.columns[-6:].to_list()
+    client_data['live'] = client_data[strategies_list].sum(axis=1) > 0
     
-    client_data2 = pd.read_csv("files\\clients_list.csv", index_col='client_name')
-    cl_d = client_data2[client_data2['broker'] == "zerodha"]
-    #client_data = pd.read_excel("clients_list.xlsx",sheet_name= "live_accounts", index_col=("client_name"))
-    cl_d = cl_d[cl_d["live"] == "Yes"]
-    base_account = client_data[client_data['base_account'] == "Yes"].index
-    base_account = base_account[0]
-    ##Getting Access token for all Clients
-    access_token = pd.read_excel("access_tokens.xlsx", sheet_name= "tokens", index_col=("client_name"))
+    #getting list of zerodha accounts that needs access tokens
+    cl_d = client_data[client_data['broker'] == "zerodha"]
+    cl_d = cl_d[cl_d["live"] == True]
     
-    for username in client_data.index:
+    #Generating access tokens for live accounts
+    for username in cl_d.index:
         data = autologin(username, client_data)
-        access_token["access_token"][username] = data["access_token"]
-        access_token["token_time"][username] = dt.datetime.now()
-    
-    #storing Access token in excel file
-    access_token = access_token.dropna()  
-    access_token.to_excel("access_tokens.xlsx", sheet_name= "tokens", index = True, engine= "openpyxl", encoding=None)
+        client_data["access_token"][username] = data["access_token"]
+        client_data["validity"][username] = date.today()
+    # dropping live column from master clients list.
+    client_data = client_data.drop(['live'], axis = 1)
+    # writing client data back into csv file with obtained access token
+    client_data.to_csv("files\\clients_list.csv", index = True)
     print('Access tokens generated for live accounts')
-    return access_token
-
-"""-----------------------------------------------------------------------------"""
-
-### Function to Generate trading Session
-def generate_trading_session(client_data,user,access_token):    
-    kite = KiteConnect(api_key=client_data["API_key"][user])
-    kite.set_access_token(access_token["access_token"][user])
-    print("Session created for " + user)
-    return kite
+    return client_data
 
 """-----------------------------------------------------------------------------"""
 def instrument_dump(kite):
     global instrument_list
+    global instrument_list_next
     instrument_dump = kite.instruments("NFO")
     instrument_df = pd.DataFrame(instrument_dump)
-    data = instrument_df[instrument_df["name"] == "NIFTY"]
-    data = data.append(instrument_df[instrument_df["name"] == "BANKNIFTY"])
-    finnifty = instrument_df[instrument_df["name"] == "FINNIFTY"]
-    #getting list of expiries
-    all_expiry = data["expiry"].drop_duplicates()
-    all_expiry = all_expiry.sort_values().reset_index(drop=True)
-    current_expiry = all_expiry[0]
-    next_expiry = all_expiry[1]
-    #filtering instruments based on current expiry
-    instrument_list = data[data["expiry"] == current_expiry]
-    instrument_list.to_excel("instrument_list.xlsx", sheet_name= "instruments", index = False, engine= "openpyxl", encoding=None)
-    #filtering instruments based on next expiry
-    instrument_list_next = data[data["expiry"] == next_expiry]
-    instrument_list_next.to_excel("instrument_list_next.xlsx", sheet_name= "instruments", index = False, engine= "openpyxl", encoding=None)
-    print("instruments list generated for NF & BNF " + str(current_expiry) + " expiry")
-    print("instruments list generated for NF & BNF " + str(next_expiry) + " expiry")
-    fin_all_expiry = finnifty["expiry"].drop_duplicates()
-    fin_all_expiry = fin_all_expiry.sort_values().reset_index(drop=True)
-    fin_current_expiry = fin_all_expiry[0]
-    fin_next_expiry = fin_all_expiry[1]
-    #filtering instruments based on current expiry
-    fin_instrument_list = finnifty[finnifty["expiry"] == fin_current_expiry]
-    fin_instrument_list.to_excel("finnifty_instrument_list.xlsx", sheet_name= "instruments", index = False, engine= "openpyxl", encoding=None)
-    #filtering instruments based on next expiry
-    fin_instrument_list_next = finnifty[finnifty["expiry"] == fin_next_expiry]
-    fin_instrument_list_next.to_excel("finnifty_instrument_list_next.xlsx", sheet_name= "instruments", index = False, engine= "openpyxl", encoding=None)
-    print("instruments list generated for finnifty " + str(fin_current_expiry) + " expiry")
-    print("instruments list generated for finnifty " + str(fin_next_expiry) + " expiry")
-    return instrument_list
-
+    
+    instr_names = ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
+    instrument_list = pd.DataFrame()
+    instrument_list_next = pd.DataFrame()
+    for name in instr_names:
+        data = instrument_df[instrument_df["name"] == name]
+        expiry = data["expiry"].drop_duplicates()
+        expiry = expiry.sort_values().reset_index(drop=True)
+        current_expiry = expiry[0]
+        next_expiry = expiry[1]
+        data1 = data[data['expiry'] == current_expiry]
+        data2 = data[data['expiry'] == next_expiry]
+        instrument_list = instrument_list.append(data1)
+        instrument_list_next = instrument_list_next.append(data2)
+    
+    instrument_list.to_csv("files\\instrument_list.csv", index = False)
+    print("instruments list generated for current expiry")
+    instrument_list_next.to_csv("files\\instrument_list_next.csv", index = False)
+    print("instruments list generated for next expiry")
+    return 
 """-----------------------------------------------------------------------------"""
 #Function for Pre-market requirements
 def pre_market():
-    multi_autologin()
-    kite = generate_trading_session(client_data, base_account, access_token)
+    client_data = multi_autologin()
+    client_data = client_data.T
+    clients = {}
+    for name in client_data:
+        print(name)
+        clients[name] = Client(client_data[name], 'nap') 
+    kite = General.session_zerodha('iampl', clients)
     instrument_dump(kite)
 
 

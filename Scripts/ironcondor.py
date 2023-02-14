@@ -21,12 +21,15 @@ from kiteconnect import KiteConnect
 from dhanhq import dhanhq
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
+from mytradingclasses import General, Client
 
 logging.basicConfig(level=logging.INFO)
 
 
 ###############################################################################
 # Changing Current Working Directory
-#cwd = os.chdir("D:\\Zerodha API TEST\\1_account_authorization")
+cwd = os.chdir("C:\\Users\\Yugenderan\\OneDrive\Professional Development\\Programming_Everything\\Trading")
 ###############################################################################
-
+strategy = 'ironcondor'
+client_data = pd.read_csv("files\\clients_list.csv", index_col='client_name')
+client_data = client_data[client_data[strategy] > 0]
