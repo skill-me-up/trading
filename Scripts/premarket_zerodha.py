@@ -129,6 +129,7 @@ def pre_market():
     instrument_dump(kite)
 
 
+
 pre_market()
 
 #premarket_sched = BackgroundScheduler()

@@ -8,6 +8,8 @@ Created on Mon Feb 13 10:56:42 2023
 from kiteconnect import KiteConnect
 from dhanhq import dhanhq
 from generalclasses import General
+from datetime import datetime as dt, date, time
+import pandas as pd
 
 
 class Client:
@@ -50,3 +52,30 @@ class Trading:
         strikes = list(set(strikes))
         strikes.sort()
         return strikes
+
+    def days_to_expiry(self, current_expiry_date):
+        today = date.today()
+        working_days = pd.read_excel('files\\working_days.xlsx')
+        working_days["working_days"] = working_days['working_days'].dt.date
+        expiry_index = working_days[working_days['working_days'] == current_expiry_date].index.values
+        expiry_index = expiry_index[0]
+        today_index = working_days[working_days['working_days'] == today].index.values
+        today_index = today_index[0]
+        days_to_expiry = expiry_index - today_index
+        return days_to_expiry
+    
+    def day_fraction(self, close_time = time(15,30), open_time = time(9,15)):
+        today = date.today()
+        openingtime = dt.combine(today, open_time)
+        closingtime = dt.combine(today, close_time)
+        diff = (closingtime - openingtime).total_seconds()
+        current_time = dt.today()
+        frac = (current_time - openingtime).total_seconds()
+        ratio = frac/diff
+        if ratio > 1:
+            ratio = 1
+        return ratio
+        
+        
+        
+        
