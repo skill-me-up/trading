@@ -106,9 +106,12 @@ def instrument_dump(kite):
         next_expiry = expiry[1]
         data1 = data[data['expiry'] == current_expiry]
         data2 = data[data['expiry'] == next_expiry]
-        instrument_list = instrument_list.append(data1)
-        instrument_list_next = instrument_list_next.append(data2)
-    
+        instrument_list = pd.concat([instrument_list,data1],axis = 0,
+                                    join ='outer', ignore_index=True)
+                                    
+        instrument_list_next = pd.concat([instrument_list_next,data2],
+                                         axis = 0,join ='outer', 
+                                         ignore_index=True)    
     instrument_list.to_csv("files\\instrument_list.csv", index = False)
     print("instruments list generated for current expiry")
     instrument_list_next.to_csv("files\\instrument_list_next.csv", index = False)
