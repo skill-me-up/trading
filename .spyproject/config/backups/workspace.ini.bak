@@ -4,7 +4,7 @@ save_data_on_exit = True
 save_history = True
 save_non_project_files = False
 project_type = 'empty-project-type'
-recent_files = ['Scripts\\mytradingclasses.py', 'Scripts\\ironcondor.py', 'Scripts\\premarket_zerodha.py', 'Scripts\\OptionChain.py', 'Scripts\\black_scholes.py']
+recent_files = ['Scripts\\tradingclasses.py', 'Scripts\\ironcondor.py', 'Scripts\\premarket_zerodha.py', 'Scripts\\OptionChain.py', 'Scripts\\black_scholes.py', 'Scripts\\generalclasses.py']
 
 [main]
 version = 0.2.0
