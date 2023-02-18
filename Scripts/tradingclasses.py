@@ -26,6 +26,7 @@ class Client:
         self.password = client_data['password']
         self.authenticator_id = client_data['authenticator_id']
         self.access_token = client_data['access_token']
+        self.validity = client_data['validity']
         self.capital = client_data[strategy]
         #Create New trading Session
         if self.broker == 'zerodha':
