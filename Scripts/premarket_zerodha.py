@@ -33,25 +33,22 @@ cwd = os.chdir("C:\\Users\\Yugenderan\\OneDrive\Professional Development\\Progra
 """-----------------------------------------------------------------------------"""
 
 def autologin(user, client_data):
-    kite = KiteConnect(api_key=client_data["API_key"][user])
+    kite = KiteConnect(api_key=client_data.loc[user, "API_key"])
     service = webdriver.chrome.service.Service('./chromedriver')
     service.start()
-    options = webdriver.ChromeOptions()
-    #options.add_argument('--headless')
-    options = options.to_capabilities()
-    driver = webdriver.Remote(service.service_url, options)
+    driver = webdriver.Remote(service.service_url)
     driver.get(kite.login_url())
     driver.implicitly_wait(5)
     username = driver.find_element("xpath",'/html/body/div[1]/div/div[2]/div[1]/div/div/div[2]/form/div[1]/input')
     password = driver.find_element("xpath",'/html/body/div[1]/div/div[2]/div[1]/div/div/div[2]/form/div[2]/input')
-    username.send_keys(client_data["broker_id"][user])
-    password.send_keys(client_data["password"][user])
+    username.send_keys(client_data.loc[user, "broker_id"])
+    password.send_keys(client_data.loc[user, "password"])
     
     driver.find_element("xpath",'/html/body/div[1]/div/div[2]/div[1]/div/div/div[2]/form/div[4]/button').click()
     time.sleep(5)
     totp_text_field = driver.find_element("xpath",'/html/body/div[1]/div/div[2]/div[1]/div/div/div[2]/form/div[2]/input')
                                                                                                                         
-    totp = TOTP(client_data["authenticator_id"][user])
+    totp = TOTP(client_data.loc[user, "authenticator_id"])
     token = totp.now()
     totp_text_field.send_keys(token)
    
@@ -61,7 +58,7 @@ def autologin(user, client_data):
     driver.quit()
 
     #generating access token - valid till 6 am the next day
-    data = kite.generate_session(request_token, api_secret=client_data["API_secret"][user])
+    data = kite.generate_session(request_token, api_secret=client_data.loc[user, "API_secret"])
     return data
 
 """-----------------------------------------------------------------------------"""
@@ -78,9 +75,10 @@ def multi_autologin():
     
     #Generating access tokens for live accounts
     for username in cl_d.index:
+        print('Logging in '+ username)
         data = autologin(username, client_data)
-        client_data["access_token"][username] = data["access_token"]
-        client_data["validity"][username] = date.today()
+        client_data.loc[username, "access_token"] = data["access_token"]        
+        client_data.loc[username, 'validity'] = date.today()
     # dropping live column from master clients list.
     client_data = client_data.drop(['live'], axis = 1)
     # writing client data back into csv file with obtained access token
@@ -127,7 +125,6 @@ def pre_market():
         clients[name] = Client(client_data[name], 'nap') 
     kite = Client.session('self','iampl', clients)
     instrument_dump(kite)
-
 
 
 pre_market()

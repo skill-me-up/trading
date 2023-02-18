@@ -12,8 +12,10 @@ from datetime import datetime as dt
 from datetime import time
 from tradingclasses import Client, Trading
 from generalclasses import General
+from apscheduler.schedulers.background import BackgroundScheduler
+import logging
 
-
+logging.basicConfig(level=logging.INFO)
 
 """-----------------------------------------------------------------------------"""
 # Changing Current Working Directory
@@ -40,6 +42,7 @@ lp = session.ltp(underlying_exchange + ':' + underlying)
 lp = lp[underlying_exchange + ':' + underlying]['last_price']
 atm = General.round_multiple(lp,strike_diff)
 instrument_list = pd.read_csv("files\\instrument_list.csv")
+instrument_list = instrument_list[instrument_list['name'] == scrip]
 instrument_list['expiry'] = pd.to_datetime(instrument_list['expiry'])
 current_expiry_date = instrument_list['expiry'].min().date()
 instrument_list = instrument_list[instrument_list['name'] == scrip]
@@ -123,11 +126,45 @@ def get_iv():
     iv = pd.concat([ce_iv, pe_iv],axis = 0, join = 'outer', ignore_index=True)
     iv = iv.sort_values('strike').reset_index(drop=True).drop(columns=['strikePrice'])
     iv = iv.rename(columns={'impliedVolatility':'iv'})
+    iv.to_csv('files\\impliedVolatility.csv', index =False)
     return iv
 
+def option_type(op):
+    if op == 'CE':
+        return 'c'
+    if op =='PE':
+        return 'p'
+    
+def get_greeks(df):
+    r = 10 #risk free rate
+    t = Trading.days_to_expiry('self', current_expiry_date) + (1-Trading.day_fraction('self'))
+    bsm = op.black_scholes(K=df.strike, St=df.spot_price, r=r, t=t, 
+                           v=df.iv, type=df.op)
+    return bsm
+
+# Scheduling tasks
+bs = BackgroundScheduler()
+stoptime = time(15,15,5)
+stoptime = dt.combine(date.today(), stoptime)
+
+bs.add_job(Trading.get_iv, 'interval',id = 'nse_iv',
+           minutes = 3, start_date= dt.today(), end_date=stoptime, 
+           jitter = 2, replace_existing= True, args =('self',instrument_list, scrip),
+           misfire_grace_time = 3)
+
+'''ap.add_job(instr_list, 'cron', id = 'instru_list', day_of_week='mon-fri',
+            hour=9, minute=24, args = (), replace_existing= True,
+            misfire_grace_time = 3)
+
+ap.add_job(squareoff, 'cron', id = 'squareoff_event', day_of_week='mon-fri',
+            hour=15, minute=15, args = (clients,), replace_existing= True,
+            misfire_grace_time = 3)'''
+bs.start()
 
 kws = KiteTicker(clients[base_account].api_key,clients[base_account].access_token)
 
+
+##################################
 def on_ticks(ws,ticks):
     # Callback to receive ticks.
     #logging.debug("Ticks: {}".format(ticks))
@@ -136,20 +173,27 @@ def on_ticks(ws,ticks):
     global tick
     global iv
     global df
+    global df2
     tick = ticks
     #print(tick)
     df = pd.DataFrame(tick, columns= ['instrument_token','last_price', 'tradable']).set_index('instrument_token')
-    underlying_price = df[df['tradable'] == False]['last_price'].min()
-    iv = get_iv()
-    df2 = pd.merge(df.drop(columns=['tradable']), iv, left_on=['instrument_token'], 
-                   right_on=['instrument_token'],
-                   how = 'inner')
-    df2['op'] = df2['instrument_type'].apply(option_type)
-    df2['spot_price'] = df[df['tradable'] == False]['last_price'].min()
-    df2['bsm'] = df2['spot_price'].apply(get_greeks, args=(df2['strike'], df2['op'], df2['iv']))
-    print(df2)
+    #underlying_price = df[df['tradable'] == False]['last_price'].min()
+    try: 
+        iv = pd.read_csv('files\\impliedVolatility.csv')
+        df2 = pd.merge(df.drop(columns=['tradable']), iv, left_on=['instrument_token'], 
+                       right_on=['instrument_token'],
+                       how = 'inner')
+        df2['op'] = df2['instrument_type'].apply(option_type)
+        df2['spot_price'] = df[df['tradable'] == False]['last_price'].min()
+        #df2['risk_free_rate'] = 10
+        #df2['time_to_expiry'] = Trading.days_to_expiry('self', current_expiry_date) + (1-Trading.day_fraction('self'))
+        
+        df2['val'], df2['val_int'],df2['delta'],df2['theta'],df2['rho'],df2['gamma'],df2['vega'] = df2.apply(get_greeks, axis=1).str
+        df2 = df2.round(decimals=4).sort_values(['strike','instrument_type'], axis=0, ascending=[True,True]).reset_index(drop=True)
+        print(df2[['strike','instrument_type','last_price', 'val', 'val_int', 'delta']])
+    except:
+        print(df)
     return
-
 
 def on_connect(ws,response):
     # Callback on successful connect.
@@ -165,58 +209,13 @@ def on_close(ws, code, reason):
     ws.stop()
     
 
-
 #def ticker():
 kws.on_ticks=on_ticks
 kws.on_connect=on_connect
 kws.close = on_close
 kws.connect()
-#kws.close()
 
 
-
-
-
-
-#iv = get_iv()
-
-#calcuting current time in terms of fraction of trading hours
-'''today = date.today()
-opentime = time(9,15)
-openingtime = dt.combine(today, opentime)
-trading_seconds = 22500
-
-'''
-'''
-#Declare parameters
-K=17500    #strike price
-St=17763.45   #current stock price
-r=10      #4% risk free rate
-t=4 - ratio    #time to expiry, 30 days 
-v=15.35    #volatility 
-types='c' #Option type call
-#Black Scholes Model
-bsm=op.black_scholes(K=K, St=St, r=r, t=t, 
-                     v=v, type=types)
-print(str(K), str(types))
-for k,v in bsm['greeks'].items():
-    print(str(k) +' : '+ str(v))
-for k,v in bsm['value'].items():
-    print(str(k) +' : '+ str(v))'''
-''''''
-def get_greeks(underlying_price, strike, option_type, iv):
-    r = 10 #risk free rate
-    t = Trading.days_to_expiry('self', current_expiry_date) + (1-Trading.day_fraction('self'))
-    bsm = op.black_scholes(K=strike, St=underlying_price, r=r, t=t, 
-                           v=iv, type=option_type)
-    return bsm
-    
-def option_type(op):
-    if op == 'CE':
-        return 'c'
-    if op =='PE':
-        return 'p'
-        
 
     
     
