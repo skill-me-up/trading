@@ -12,6 +12,7 @@ from datetime import datetime as dt, date, time
 import pandas as pd
 import requests
 import json
+import logging
 
 
 class Client:
@@ -38,6 +39,7 @@ class Client:
         
         self.session = session
         
+    
 ###############################################################################       
 class Trading:
     '''contains all methods needed for trading'''
@@ -65,7 +67,8 @@ class Trading:
         strikes.sort()
         return strikes
 
-    def days_to_expiry(self, current_expiry_date):
+    def days_to_expiry_bd(self, current_expiry_date):
+        '''days to expiry in business days concept'''
         today = date.today()
         working_days = pd.read_excel('files\\working_days.xlsx')
         working_days["working_days"] = working_days['working_days'].dt.date
@@ -75,6 +78,12 @@ class Trading:
         today_index = today_index[0]
         days_to_expiry = expiry_index - today_index
         return days_to_expiry
+    
+    def days_to_expiry_ad(self, current_expiry_date):
+        '''days to expiry in all days concept excluding today'''
+        today = date.today()
+        diff = (current_expiry_date - today).days
+        return diff
     
     def day_fraction(self, close_time = time(15,30), open_time = time(9,15)):
         today = date.today()
@@ -150,33 +159,191 @@ class Trading:
         return iv
         
         
-        def strangle_selection(kite_session, instrument_list, strike_diff, exchange, scrip):
-            '''Strike selection based on given strike difference from atm'''
-            #getting last traded price from kiteconnect
-            exchange = 'NSE'
-            scrip = 'NIFTY BANK'
-            ltp = kite_session.ltp(exchange +':'+scrip)
-            #converting data received to pandas dataframe
-            data = {}
-            data = pd.DataFrame(data, index=["spot_last_price"])
-            for num in range(0,4):
-                data[num]= ltp["NSE:NIFTY BANK"]["last_price"]
-           
-            data = data.T
-            data["name"] = "BANKNIFTY"
-            data["instrument_type"] = ["CE", "CE", "PE", "PE"]
-            data["strike_difference"] = [1500,1000,-1000,-1500]
-            #data = data[["name","spot_last_price"]]
-           
-            #finding atm and strike
-            data["atm"] = round_multiple(data["spot_last_price"],100)
-            data["strike"] = data["atm"] + data["strike_difference"]
-           
-           
-            #getting symbol for selected strike prices
-            symbols = pd.merge(data,instrument_list,left_on = ["name","instrument_type","strike"],
-                                right_on=["name","instrument_type","strike"], how ="inner",)
-            symbols = symbols.drop("last_price",axis = 1)
-            return symbols
+    def strangle_selection(self,kite_session, underlying, instrument_list,
+                           strike_dist, strike_diff = 100, 
+                           hedge = False, hedge_dist = 0,
+                           position = 'short'):
+        '''Strike selection based on given strike difference from atm'''
+        #getting last traded price from kiteconnect
+        exchange = 'NSE'
+        ltp = kite_session.ltp(exchange +':'+underlying)
+        ltp = ltp[exchange + ':' + underlying]['last_price']
+        atm = General.round_multiple(ltp,strike_diff)
+        strangle = pd.DataFrame()
+        strangle_dic = [('CE', 'sell'), ('PE', 'sell')]
+        hedge_dic = [('CE', 'buy'), ('PE', 'buy')]
+
+        for k,v in strangle_dic:
+            if k == 'CE':
+                a = pd.DataFrame([atm+strike_dist,k,v]).T
+            elif k == 'PE':
+                a = pd.DataFrame([atm-strike_dist,k,v]).T
+            strangle = pd.concat([strangle,a])
+
+        if hedge == True:
+            for k,v in hedge_dic:
+                if k == 'CE':
+                    a = pd.DataFrame([atm+hedge_dist,k,v]).T
+                elif k == 'PE':
+                    a = pd.DataFrame([atm-hedge_dist,k,v]).T
+                strangle = pd.concat([strangle,a])
+
+        strangle =strangle.set_axis(('strike', 'instrument_type', 'buy/sell'), axis=1).reset_index(drop=True)
+        if position =="long":
+            strangle['buy/sell'] = strangle['buy/sell'].map({'buy':'sell', 'sell':'buy'})
+        
+        #getting symbol for selected strike prices
+        symbols = pd.merge(instrument_list,strangle, left_on = ["instrument_type","strike"],
+                            right_on=["instrument_type","strike"], how ="inner",)
+        symbols = symbols.drop("last_price",axis = 1)
+        return symbols
+    
+    def position_size_value(self, price, risk_value, lot_size=1):
+        ''' Calculates Position size for the capital'''
+        quantity = risk_value / price
+        quantity = lot_size * round(quantity/lot_size)
+        return quantity
+
+    def position_size_margin(self, margin, clients, lot_size=1):
+        lots = clients.capital/margin
+        quantity = lots * lot_size
+        return int(quantity)
+    
+    def orderslicing(self, total_quantity, max_quantity, remaining_quantity):
+        '''Defines order quanitity after order slicing'''
+        if remaining_quantity != 0:
+            if remaining_quantity > max_quantity:
+                order_quantity = max_quantity
+                print("quantity is: " + str(order_quantity))
+                remaining_quantity -= order_quantity
+
+            else:
+                order_quantity = remaining_quantity
+                print("quantity is: " + str(order_quantity))
+                remaining_quantity -= order_quantity
+
+            #self.quantity = order_quantity
+            #self.remaining_quantity = remaining_quantity
+
+        return (order_quantity, remaining_quantity)
+    
+    
+    def place_order(tag, client, symbol, quantity, order_type, product,
+                    price = None, trigger_price = None,
+                    buy_sell = None, exchange='NFO'):
+        #client =clients['moshin']
+        session = client.session
+        try:
+            buy_sell = symbol['buy/sell']
+        except:
+            pass
+        
+        try:
+            exchange = symbol['exchange']
+        except:
+            pass
+        
+        if client.broker == 'zerodha':
+            #symbol = "NIFTY22N1718700PE"
+            #multiplier = 3
+            #place Market Order for Options Market
+            if buy_sell == "buy":
+                t_type=session.TRANSACTION_TYPE_BUY
+            elif buy_sell == "sell":
+                t_type=session.TRANSACTION_TYPE_SELL
             
+            if product == "MIS":
+                product_type=session.PRODUCT_MIS
+            elif product == "NRML":
+                product_type=session.PRODUCT_NRML
+                
+            if order_type == "market":
+                o_type=session.ORDER_TYPE_MARKET
+            elif order_type == "limit":
+                o_type=session.ORDER_TYPE_LIMIT
+            elif order_type == "stoploss":
+                o_type=session.ORDER_TYPE_SL
+            
+            if exchange == "NSE":
+                exchange = session.EXCHANGE_NSE
+            elif exchange == "NFO":
+                exchange = session.EXCHANGE_NFO
+            elif exchange == "BSE":
+                exchange = session.EXCHANGE_BSE
+            elif exchange == "BFO":
+                exchange = session.EXCHANGE_BFO
+                
+            try:
+                order = session.place_order(tag=tag,
+                                            tradingsymbol=symbol.tradingsymbol,
+                                            exchange=exchange,
+                                            transaction_type=t_type,
+                                            quantity=quantity,
+                                            order_type=o_type,
+                                            product=product_type,
+                                            variety=session.VARIETY_REGULAR,
+                                            trigger_price=trigger_price,
+                                            price=price)
+                                         
+    
+                logging.info("Order id: {}".format(order))
+    
+                print("order id : " + order)
+    
+            except Exception as e:
+                logging.info("Error placing order: {}".format(e))
+    
+            return order
+        
+        elif client.broker== 'dhan':
+            if price == None:
+                price = 0
+            if trigger_price== None:
+                trigger_price = 0
+            
+            if buy_sell == "buy":
+                t_type=session.BUY
+            elif buy_sell == "sell":
+                t_type=session.SELL
+            
+            if exchange == "NSE":
+                exchange = session.NSE
+            elif exchange == "NFO":
+                exchange = session.NFO
+            elif exchange == "BSE":
+                exchange = session.BSE
+            elif exchange == "BFO":
+                exchange = session.BFO
+                
+            if product == "MIS":
+                product_type=session.INTRA
+            elif product == "NRML":
+                product_type=session.MARGIN
+                
+            if order_type == "market":
+                o_type=session.MARKET
+            elif order_type == "limit":
+                o_type=session.LIMIT
+            elif order_type == "stoploss":
+                o_type=session.SL
+            
+
+            try:
+                order = session.place_order(tag=tag,
+                                            transaction_type=t_type,
+                                            exchange_segment=exchange,
+                                            product_type=product_type,
+                                            order_type=o_type,
+                                            security_id=str(symbol.exchange_token),
+                                            quantity=quantity,
+                                            price=price,
+                                            trigger_price=trigger_price)
+                
+                logging.info("Order id: {}".format(order))
+    
+                print("order id : " + order)
+    
+            except Exception as e:
+                logging.info("Error placing order: {}".format(e))
+
         
