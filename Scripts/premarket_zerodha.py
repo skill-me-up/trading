@@ -36,7 +36,9 @@ def autologin(user, client_data):
     kite = KiteConnect(api_key=client_data.loc[user, "API_key"])
     service = webdriver.chrome.service.Service('./chromedriver')
     service.start()
-    driver = webdriver.Remote(service.service_url)
+    options = webdriver.ChromeOptions()
+    #options.add_argument('--headless')
+    driver = webdriver.Remote(service.service_url,options=options)
     driver.get(kite.login_url())
     driver.implicitly_wait(5)
     username = driver.find_element("xpath",'/html/body/div[1]/div/div[2]/div[1]/div/div/div[2]/form/div[1]/input')
@@ -66,6 +68,7 @@ def autologin(user, client_data):
 def multi_autologin():
     ##Getting List of Clients to trade today
     client_data = pd.read_csv("files\\clients_list.csv", index_col='client_name')
+    client_data['validity'] = pd.to_datetime(client_data['validity']).dt.date
     strategies_list = client_data.columns[-6:].to_list()
     client_data['live'] = client_data[strategies_list].sum(axis=1) > 0
     
@@ -123,8 +126,7 @@ def pre_market():
     clients = {}
     for name in client_data:
         clients[name] = Client(client_data[name], 'nap') 
-    kite = Client.session('self','iampl', clients)
-    instrument_dump(kite)
+    instrument_dump(clients['iampl'].session)
 
 
 pre_market()
