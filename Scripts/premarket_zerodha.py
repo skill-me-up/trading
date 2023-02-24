@@ -68,7 +68,7 @@ def autologin(user, client_data):
 def multi_autologin():
     ##Getting List of Clients to trade today
     client_data = pd.read_csv("files\\clients_list.csv", index_col='client_name')
-    client_data['validity'] = pd.to_datetime(client_data['validity']).dt.date
+    client_data['validity'] = pd.to_datetime(client_data['validity'], format="%d-%m-%Y").dt.date
     strategies_list = client_data.columns[-6:].to_list()
     client_data['live'] = client_data[strategies_list].sum(axis=1) > 0
     
@@ -125,7 +125,7 @@ def pre_market():
     client_data = client_data.T
     clients = {}
     for name in client_data:
-        clients[name] = Client(client_data[name], 'nap') 
+        clients[name] = Client(client_data[name]) 
     instrument_dump(clients['iampl'].session)
 
 

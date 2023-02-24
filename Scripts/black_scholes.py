@@ -10,7 +10,7 @@ from datetime import date
 from datetime import timedelta
 from datetime import datetime as dt
 from datetime import time
-from tradingclasses import Client, Trading
+from tradingclasses import Cap_Client, Trading
 from generalclasses import General
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
@@ -23,15 +23,21 @@ cwd = os.chdir("C:\\Users\\Yugenderan\\OneDrive\Professional Development\\Progra
 """-----------------------------------------------------------------------------"""
 
 strategy = 'nap'
-base_account = 'iampl'
+base_account_name = 'iampl'
+base_account_broker ='zerodha'
 client_data = pd.read_csv("files\\clients_list.csv", index_col='client_name')
 client_data = client_data[client_data[strategy] > 0].fillna('a')
-client_data = client_data.T
+brokers = client_data['broker'].tolist()
 clients = {}
-for name in client_data:
-    clients[name] = Client(client_data[name], strategy)
 
-session = Client.session('self', base_account ,clients)
+for broker in brokers:
+    clients[broker] = {}
+    cl_data = client_data[client_data['broker'] == broker].T
+    for name in cl_data:
+        clients[broker][name] = Cap_Client(cl_data[name], strategy)    
+
+base_account = clients[base_account_broker][base_account_name]
+session = clients[base_account_broker][base_account_name].session
 underlying_exchange = "NSE"
 underlying = "NIFTY 50"
 scrip = "NIFTY"
@@ -66,68 +72,6 @@ underlying_token = underlying_token(session, underlying_exchange)
 underlying_token = int(underlying_token)
 instrument_tokens.append(underlying_token)
 
-def get_iv():
-    ## Importing Options Chain From NSE
-    # Urls for fetching Data
-    url_oc      = "https://www.nseindia.com/option-chain"
-    url_bnf     = 'https://www.nseindia.com/api/option-chain-indices?symbol=BANKNIFTY'
-    url_nf      = 'https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY'
-    url_indices = "https://www.nseindia.com/api/allIndices"
-    
-    # Headers
-    headers = {'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36',
-                'accept-language': 'en,gu;q=0.9,hi;q=0.8',
-                'accept-encoding': 'gzip, deflate, br'}
-    
-    sess = requests.Session()
-    cookies = dict()
-    
-    # Local methods
-    def set_cookie():
-        request = sess.get(url_oc, headers=headers, timeout=5)
-        cookies = dict(request.cookies)
-    
-    def get_data(url):
-        set_cookie()
-        response = sess.get(url, headers=headers, timeout=5, cookies=cookies)
-        if(response.status_code==401):
-            set_cookie()
-            response = sess.get(url_nf, headers=headers, timeout=5, cookies=cookies)
-        if(response.status_code==200):
-            return response.text
-        return ""
-    
-    response_text = get_data(url_nf)
-    data = json.loads(response_text)
-    
-    # Fetching CE and PE data based on Nearest Expiry Date
-    #currExpiryDate = data["records"]["expiryDates"][0]
-    d2 = data["filtered"]["data"]
-    CE = []
-    PE = []
-    for item in d2:
-        for k,v in item.items():
-            if k == 'CE':
-                CE.append(v)
-            elif k == 'PE':
-                PE.append(v)
-    ce_df = pd.DataFrame(CE)
-    ce_df['instrument_type'] = 'CE'
-    pe_df = pd.DataFrame(PE)
-    pe_df['instrument_type'] = 'PE'
-    left = instrument_list[['strike', 'instrument_token', 'instrument_type']]
-    right1 = ce_df[['strikePrice', 'impliedVolatility','instrument_type']]
-    right2 = pe_df[['strikePrice', 'impliedVolatility','instrument_type']]
-    ce_iv = pd.merge(left, right1, left_on=['strike', 'instrument_type'], 
-                  right_on=['strikePrice', 'instrument_type'])
-    pe_iv = pd.merge(left, right2, left_on=['strike', 'instrument_type'], 
-                  right_on=['strikePrice', 'instrument_type'])
-    #ce__df = ce_df[['strikePrice', 'impliedVolatility']]
-    iv = pd.concat([ce_iv, pe_iv],axis = 0, join = 'outer', ignore_index=True)
-    iv = iv.sort_values('strike').reset_index(drop=True).drop(columns=['strikePrice'])
-    iv = iv.rename(columns={'impliedVolatility':'iv'})
-    iv.to_csv('files\\impliedVolatility.csv', index =False)
-    return iv
 
 def option_type(op):
     if op == 'CE':
@@ -161,7 +105,7 @@ ap.add_job(squareoff, 'cron', id = 'squareoff_event', day_of_week='mon-fri',
             misfire_grace_time = 3)'''
 bs.start()
 
-kws = KiteTicker(clients[base_account].api_key,clients[base_account].access_token)
+kws = KiteTicker(base_account.api_key,base_account.access_token)
 
 
 ##################################

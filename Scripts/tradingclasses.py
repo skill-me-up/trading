@@ -17,7 +17,7 @@ import logging
 
 class Client:
     '''helps to create objects of clients data'''
-    def __init__(self, client_data,strategy):
+    def __init__(self, client_data):
         '''intialize data'''
         self.name = client_data.name
         self.broker = client_data['broker']
@@ -28,7 +28,7 @@ class Client:
         self.authenticator_id = client_data['authenticator_id']
         self.access_token = client_data['access_token']
         self.validity = client_data['validity']
-        self.capital = client_data[strategy]
+        #self.capital = client_data[strategy]
         #Create New trading Session
         if self.broker == 'zerodha':
             session = KiteConnect(api_key=self.api_key)
@@ -39,7 +39,10 @@ class Client:
         
         self.session = session
         
-    
+class Cap_Client(Client):
+    def __init__(self, client_data, strategy):
+        super().__init__(client_data)
+        self.capital = client_data[strategy]
 ###############################################################################       
 class Trading:
     '''contains all methods needed for trading'''
@@ -309,11 +312,9 @@ class Trading:
             if exchange == "NSE":
                 exchange = session.NSE
             elif exchange == "NFO":
-                exchange = session.NFO
+                exchange = session.FNO
             elif exchange == "BSE":
                 exchange = session.BSE
-            elif exchange == "BFO":
-                exchange = session.BFO
                 
             if product == "MIS":
                 product_type=session.INTRA
@@ -327,17 +328,24 @@ class Trading:
             elif order_type == "stoploss":
                 o_type=session.SL
             
+            if symbol.instrument_type == "CE":
+                op_type = 'CALL'
+            else:
+                op_type = "PUT"
+            
 
             try:
-                order = session.place_order(tag=tag,
-                                            transaction_type=t_type,
+                order = session.place_order(transaction_type=t_type,
                                             exchange_segment=exchange,
                                             product_type=product_type,
                                             order_type=o_type,
                                             security_id=str(symbol.exchange_token),
                                             quantity=quantity,
                                             price=price,
-                                            trigger_price=trigger_price)
+                                            trigger_price=trigger_price,
+                                            drv_expiry_date=str(symbol.expiry),
+                                            drv_options_type=op_type,
+                                            drv_strike_price=symbol.strike)
                 
                 logging.info("Order id: {}".format(order))
     

@@ -14,7 +14,7 @@ with multiple brokers as intermediaries
 import os
 import logging
 import datetime as dt
-import time
+import time as t
 from datetime import date
 from datetime import time
 from datetime import datetime
@@ -23,7 +23,7 @@ from kiteconnect import KiteConnect
 from dhanhq import dhanhq
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
-from tradingclasses import Client, Trading
+from tradingclasses import Trading, Cap_Client
 from generalclasses import General
 
 logging.basicConfig(level=logging.INFO)
@@ -43,19 +43,19 @@ scrip_exchange = 'NFO'
 
 #Importing Clients data from clients_list file
 client_data = pd.read_csv("files\\clients_list.csv", index_col='client_name')
-client_data['validity'] = pd.to_datetime(client_data['validity']).dt.date
+client_data['validity'] = pd.to_datetime(client_data['validity'], format="%d-%m-%Y").dt.date
 client_data = client_data[client_data[strategy] > 0].fillna('a')
 brokers = client_data['broker'].tolist()
 
 #converting clients data into clients class objects
 #client_data = client_data.T
+
 clients = {}
 for broker in brokers:
     clients[broker] = {}
     cl_data = client_data[client_data['broker'] == broker].T
     for name in cl_data:
-        clients[broker][name] = Client(cl_data[name], strategy)
-        
+        clients[broker][name] = Cap_Client(cl_data[name], strategy)       
 #importing base account for current strategy
 base_ac = pd.read_csv("files\\base_accounts.csv", index_col='strategy').squeeze()
 base_ac = base_ac.loc[strategy]
@@ -80,7 +80,7 @@ working_days = pd.read_excel('files\\working_days.xlsx').squeeze().dt.date.to_li
 entry_date = working_days[working_days.index(expiry) - 3]
 
 #creating session for base account
-kite_session = clients[base_ac].session
+#kite_session = clients[base_ac].session
 
 
 
@@ -89,14 +89,14 @@ entry_time = dt.time(10,0,0)
 exit_time = dt.time(15,15,0)
 
 #combining date and time to use scheduling function
-entry_date = datetime.combine(entry_date, entry_time)
+entry_time = datetime.combine(entry_date, entry_time)
 exit_date = datetime.combine(expiry, exit_time)
 
 time_gap =15
-legs = 5
+#legs = 5
 
 
-def entry(clients, instruments,legs, base_ac, expiry):
+def entry(clients, instruments, base_ac, expiry):
     """Entry into the ironcondor position"""
     global symbols
     symbols= Trading.strangle_selection('self',clients['zerodha'][base_ac].session, 
@@ -129,7 +129,7 @@ def entry(clients, instruments,legs, base_ac, expiry):
                                                         order_type='market',
                                                         product='NRML')
                         
-                        time.sleep(0.5)
+                        
                     print('Full order placed for '+username)
             elif broker == 'dhan':
                 symbols = symbols.sort_values(['instrument_type','buy/sell'], ascending=True,).reset_index(drop=True)
@@ -149,10 +149,22 @@ def entry(clients, instruments,legs, base_ac, expiry):
                                                         symbol=symbol,
                                                         quantity=order_quantity,
                                                         order_type ='market', 
-                                                        product ='NRML',)
-                        time.sleep(0.5)
+                                                        product ='NRML')
+                        t.sleep(2)
                     print('Full order placed for '+username)
                     
     return
 
-            
+ironcondor = BackgroundScheduler()
+
+
+
+
+ironcondor.add_job(entry, 'date',id = "entry", run_date=entry_time,
+                   max_instances= 1,
+                   args = (clients, instruments, base_ac, expiry),
+                   replace_existing= True, misfire_grace_time= 10)
+
+
+ironcondor.start()
+#entry(clients,instruments,base_ac,expiry)
